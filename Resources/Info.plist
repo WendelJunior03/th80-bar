@@ -7,8 +7,8 @@
   <key>CFBundleIdentifier</key><string>com.wendeljunior.th80bar</string>
   <key>CFBundleExecutable</key><string>TH80Bar</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>Protocolo adaptado de th80-studio (Clouddios, MIT).</string>

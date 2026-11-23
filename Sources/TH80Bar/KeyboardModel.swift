@@ -21,7 +21,9 @@ final class KeyboardModel {
     var brightness = 9
     var speed = 2
     var rainbow = false
-    var color = Color.blue
+    var rgb = RGBColor(r: 0, g: 102, b: 255)
+    /// Primeiro quadro do último envio, para a prévia da tela.
+    var lastUpload: CGImage? = LastUploadStore.load()
 
     var syncClockOnConnect: Bool {
         didSet { UserDefaults.standard.set(syncClockOnConnect, forKey: "syncClockOnConnect") }
@@ -31,6 +33,8 @@ final class KeyboardModel {
     private let hid = HIDDevice()
     private var client: TH80Client { TH80Client(hid: hid) }
     private let queue = DispatchQueue(label: "th80.io")
+    /// Mudança de luz feita enquanto outra gravação estava em andamento.
+    private var lightingQueued = false
 
     init() {
         syncClockOnConnect = UserDefaults.standard.object(forKey: "syncClockOnConnect") as? Bool ?? true
@@ -60,23 +64,28 @@ final class KeyboardModel {
                 self.busy = false
                 switch result {
                 case .success(let cfg):
-                    if let cfg { self.apply(cfg) }
+                    if let cfg { self.apply(cfg, keepLighting: self.lightingQueued) }
                     self.status = nil
                 case .failure(let err):
                     self.errorMessage = err.localizedDescription
                     self.status = nil
                 }
+                if self.lightingQueued {
+                    self.lightingQueued = false
+                    self.applyLighting()
+                }
             }
         }
     }
 
-    private func apply(_ cfg: TH80Config) {
+    private func apply(_ cfg: TH80Config, keepLighting: Bool = false) {
         config = cfg
+        guard !keepLighting else { return }
         effect = cfg.effect
         brightness = cfg.brightness
         speed = cfg.speed
         rainbow = cfg.colorMode == 255
-        color = Color(red: Double(cfg.red) / 255, green: Double(cfg.green) / 255, blue: Double(cfg.blue) / 255)
+        rgb = RGBColor(r: cfg.red, g: cfg.green, b: cfg.blue)
     }
 
     func refresh(thenSyncClock: Bool = false) {
@@ -146,7 +155,13 @@ final class KeyboardModel {
         Task { @MainActor in
             while busy { try? await Task.sleep(for: .milliseconds(200)) }
             uploadProgress = nil
-            if errorMessage == nil { cancelMedia() }
+            if errorMessage == nil {
+                if let first = media.frames.first {
+                    lastUpload = first
+                    LastUploadStore.save(first)
+                }
+                cancelMedia()
+            }
         }
     }
 
@@ -154,12 +169,14 @@ final class KeyboardModel {
 
     func applyLighting() {
         let (e, b, s, rb) = (effect, brightness, speed, rainbow)
-        let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .blue
-        let (r, g, bl) = (Int((rgb.redComponent * 255).rounded()), Int((rgb.greenComponent * 255).rounded()),
-                          Int((rgb.blueComponent * 255).rounded()))
+        let (r, g, bl) = (rgb.r, rgb.g, rgb.b)
         // Evita regravar quando a UI só refletiu o que acabou de ser lido do teclado.
         if let cfg = config, cfg.effect == e, cfg.brightness == b, cfg.speed == s,
            (cfg.colorMode == 255) == rb, rb || (cfg.red == r && cfg.green == g && cfg.blue == bl) {
+            return
+        }
+        if busy {
+            lightingQueued = true
             return
         }
         modify("Aplicando iluminação…") { cfg in
@@ -175,6 +192,17 @@ final class KeyboardModel {
                 cfg.blue = bl
             }
         }
+    }
+
+    func pickColor(_ c: RGBColor) {
+        rgb = c
+        rainbow = false
+        applyLighting()
+    }
+
+    func pickEffect(_ e: Int) {
+        effect = e
+        applyLighting()
     }
 
     // MARK: App

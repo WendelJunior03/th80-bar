@@ -7,6 +7,7 @@ struct TH80BarApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuView(model: model)
+                .environment(\.locale, Locale(identifier: "pt_BR"))
         } label: {
             Image(systemName: model.connected ? "keyboard.fill" : "keyboard")
         }
