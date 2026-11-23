@@ -112,11 +112,16 @@ final class KeyboardModel {
     // MARK: Tela
 
     func setScreenMode(_ mode: Int) {
-        modify(mode == 0 ? "Mostrando relógio…" : "Mostrando imagem…") { $0.screenMode = mode }
+        if mode == 0 { return syncClock() }
+        modify("Mostrando imagem…") { $0.screenMode = mode }
     }
 
+    /// Acerta a hora e mostra o relógio na tela (como no app oficial, as duas coisas vão juntas).
     func syncClock() {
-        modify("Acertando relógio…") { $0.setClock(Date()) }
+        modify("Acertando relógio…") { cfg in
+            cfg.screenMode = 0
+            cfg.setClock(Date())
+        }
     }
 
     func chooseMedia() {
