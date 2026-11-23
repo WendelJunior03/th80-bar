@@ -274,12 +274,10 @@ private struct ScreenTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            if cfg.frameCount > TH80Protocol.maxFrames {
-                Label("Isso substitui a animação de fábrica (\(cfg.frameCount) quadros), que não pode ser restaurada por aqui.",
+            Label("O envio apaga a memória de imagens do teclado, incluindo os números do relógio e a animação de fábrica. Eles não podem ser restaurados por aqui.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-            }
 
             if let p = model.uploadProgress {
                 VStack(alignment: .leading, spacing: 4) {
