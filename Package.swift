@@ -8,7 +8,8 @@ let package = Package(
         .executableTarget(
             name: "TH80Bar",
             path: "Sources/TH80Bar",
-            linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ServiceManagement")]
+            linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ServiceManagement"), .linkedFramework("CoreMediaIO"),
+                             .linkedFramework("EventKit"), .linkedFramework("Carbon")]
         )
     ]
 )

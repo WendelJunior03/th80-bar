@@ -7,10 +7,11 @@
   <key>CFBundleIdentifier</key><string>com.wendeljunior.th80bar</string>
   <key>CFBundleExecutable</key><string>TH80Bar</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.2</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleShortVersionString</key><string>2.0</string>
+  <key>CFBundleVersion</key><string>4</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Mostrar seu próximo compromisso no cartão do dia da tela do teclado.</string>
   <key>NSHumanReadableCopyright</key><string>Protocolo adaptado de th80-studio (Clouddios, MIT).</string>
 </dict>
 </plist>

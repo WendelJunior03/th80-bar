@@ -36,23 +36,39 @@ struct RGBColor: Equatable, Hashable {
     ]
 }
 
-/// Guarda o primeiro quadro do último envio para mostrar na prévia da tela.
+/// Guarda os quadros do último envio (para a prévia e para reenviar com a tela de "ausente").
 enum LastUploadStore {
-    private static var url: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TH80Bar", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("ultima-imagem.png")
+    private static var dir: URL {
+        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("TH80Bar/UltimoEnvio", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
     }
 
-    static func load() -> CGImage? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+    static func load() -> CGImage? { loadAll()?.frames.first }
+
+    static func loadAll() -> (frames: [CGImage], delayMs: Int)? {
+        let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "png" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let frames = files.compactMap { url -> CGImage? in
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateImageAtIndex(src, 0, nil)
+        }
+        guard !frames.isEmpty else { return nil }
+        let delay = (try? String(contentsOf: dir.appendingPathComponent("intervalo.txt"), encoding: .utf8)).flatMap { Int($0) } ?? 100
+        return (frames, delay)
     }
 
-    static func save(_ image: CGImage) {
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(dest, image, nil)
-        CGImageDestinationFinalize(dest)
+    static func save(_ frames: [CGImage], delayMs: Int) {
+        let d = dir
+        try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)
+            .forEach { try? FileManager.default.removeItem(at: $0) }
+        for (i, img) in frames.enumerated() {
+            let url = d.appendingPathComponent(String(format: "quadro-%02d.png", i))
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { continue }
+            CGImageDestinationAddImage(dest, img, nil)
+            CGImageDestinationFinalize(dest)
+        }
+        try? "\(delayMs)".write(to: d.appendingPathComponent("intervalo.txt"), atomically: true, encoding: .utf8)
     }
 }

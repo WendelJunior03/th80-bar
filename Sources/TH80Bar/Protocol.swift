@@ -87,15 +87,14 @@ struct TH80Config: Equatable {
         bytes[41] = bcd(c.year! - 2000)
     }
 
-    mutating func setFrames(count: Int, delayMs: Int) {
+    /// Posição 1 (byte 34) e posição 2 (byte 46); mostra a posição 1.
+    mutating func setSlots(count0: Int, count1: Int, delayMs: Int) {
         screenMode = 1
-        bytes[34] = UInt8(count)
-        bytes[46] = UInt8(count)
-        if count > 1 {
-            let d = min(65_535, max(60, delayMs))
-            bytes[43] = UInt8(d & 0xFF)
-            bytes[44] = UInt8(d >> 8)
-        }
+        bytes[34] = UInt8(count0)
+        bytes[46] = UInt8(count1)
+        let d = min(65_535, max(60, delayMs))
+        bytes[43] = UInt8(d & 0xFF)
+        bytes[44] = UInt8(d >> 8)
     }
 }
 
@@ -127,14 +126,14 @@ struct TH80Client {
         try exchange(.end)
     }
 
-    /// Grava quadros RGB565 (64 KiB cada) nas duas posições de imagem.
-    func uploadFrames(_ frames: [Data], delayMs: Int, base: TH80Config,
-                      progress: @escaping (Double) -> Void) throws {
+    /// Grava quadros RGB565 (64 KiB cada): posição 1 seguida da posição 2, num fluxo só.
+    /// O envio sempre apaga toda a memória de imagens, então as duas posições vão juntas.
+    func uploadSlots(_ slot0: [Data], _ slot1: [Data], delayMs: Int, base: TH80Config,
+                     progress: @escaping (Double) -> Void) throws {
         var config = base
-        config.setFrames(count: frames.count, delayMs: delayMs)
+        config.setSlots(count0: slot0.count, count1: slot1.count, delayMs: delayMs)
         var payload = Data()
-        frames.forEach { payload.append($0) }
-        payload.append(payload) // o teclado guarda duas cópias
+        (slot0 + slot1).forEach { payload.append($0) }
 
         try writeConfig(config)
         try exchange(.eraseImages)

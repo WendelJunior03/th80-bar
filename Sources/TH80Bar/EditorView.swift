@@ -121,6 +121,8 @@ struct EditorView: View {
     @Bindable var editor: EditorModel
     @Bindable var keyboard: KeyboardModel
     @State private var showSendConfirm = false
+    @State private var showGallery = false
+    @State private var showTextAnim = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -138,6 +140,8 @@ struct EditorView: View {
         .frame(minWidth: 1080, minHeight: 640)
         .background(.background)
         .task(id: editor.playing) { await playLoop() }
+        .sheet(isPresented: $showGallery) { GallerySheet { editor.load(frames: $0, delayMs: $1) } }
+        .sheet(isPresented: $showTextAnim) { TextAnimationSheet { editor.load(frames: $0, delayMs: $1) } }
     }
 
     // Ferramentas
@@ -292,6 +296,12 @@ struct EditorView: View {
                     Text("\(Int(editor.delayMs)) ms por quadro").font(.caption).foregroundStyle(.secondary)
                 }
 
+                section("Modelos") {
+                    Button { showGallery = true } label: { Label("Galeria de animações…", systemImage: "sparkles.rectangle.stack") }
+                    Button { showTextAnim = true } label: { Label("Texto animado…", systemImage: "character.cursor.ibeam") }
+                }
+                .buttonStyle(.link)
+
                 section("Arquivo") {
                     Button { editor.importMedia() } label: { Label("Importar imagem ou GIF…", systemImage: "square.and.arrow.down") }
                     Button { editor.exportGIF() } label: { Label("Exportar como GIF…", systemImage: "square.and.arrow.up") }
@@ -331,9 +341,9 @@ struct EditorView: View {
         }
         .confirmationDialog("Enviar \(editor.frames.count) quadro(s) para a tela?", isPresented: $showSendConfirm) {
             Button("Enviar") {
-                keyboard.pendingMedia = editor.preparedMedia
-                keyboard.pendingMediaName = "Desenho"
-                keyboard.uploadPendingMedia()
+                editor.playing = false
+                keyboard.upload(frames: editor.frames.map(\.image), delayMs: Int(editor.delayMs),
+                                label: "Enviando desenho… mantenha o cabo conectado")
             }
         } message: {
             Text("Substitui a imagem atual da tela. Leva de 20 a 60 segundos.")

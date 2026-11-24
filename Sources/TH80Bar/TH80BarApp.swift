@@ -4,6 +4,7 @@ import SwiftUI
 struct TH80BarApp: App {
     @State private var model = KeyboardModel()
     @State private var editor = EditorModel()
+    @State private var keymap = KeymapModel()
 
     var body: some Scene {
         MenuBarExtra {
@@ -20,5 +21,11 @@ struct TH80BarApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1180, height: 720)
+
+        Window("Teclas do TH80", id: "keymap") {
+            KeymapView(model: keymap)
+                .environment(\.locale, Locale(identifier: "pt_BR"))
+        }
+        .windowResizability(.contentMinSize)
     }
 }

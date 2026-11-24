@@ -29,11 +29,12 @@ private let effects: [Effect] = [
 ]
 
 private enum Tab: String, CaseIterable {
-    case screen = "Tela", light = "Luz", settings = "Ajustes"
+    case screen = "Tela", light = "Luz", auto = "Auto", settings = "Ajustes"
     var icon: String {
         switch self {
         case .screen: "rectangle.inset.filled"
         case .light: "light.max"
+        case .auto: "wand.and.stars"
         case .settings: "gearshape"
         }
     }
@@ -52,6 +53,7 @@ struct MenuView: View {
                     switch tab {
                     case .screen: ScreenTab(model: model, cfg: cfg)
                     case .light: LightTab(model: model)
+                    case .auto: AutoTab(model: model)
                     case .settings: SettingsTab(model: model)
                     }
                 }
@@ -64,7 +66,7 @@ struct MenuView: View {
             feedback.padding(.horizontal, 14)
             Spacer(minLength: 12)
         }
-        .frame(width: 330)
+        .frame(width: 350)
         .animation(.snappy(duration: 0.2), value: tab)
     }
 
@@ -317,6 +319,7 @@ private struct LightTab: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            PresetsCard(model: model)
             Card(title: "Cor") { colorSection }
             Card(title: "Intensidade") {
                 sliderRow(icon: "sun.max", value: $model.brightness, range: 0...9)
@@ -443,9 +446,28 @@ private struct LightTab: View {
 
 private struct SettingsTab: View {
     @Bindable var model: KeyboardModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 10) {
+            Button {
+                openWindow(id: "keymap")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                HStack {
+                    Image(systemName: "keyboard.badge.ellipsis").font(.title3)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Remapear teclas").font(.system(size: 13, weight: .semibold))
+                        Text("Troque funções e crie atalhos").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             Card {
                 Toggle("Acertar relógio ao conectar", isOn: $model.syncClockOnConnect)
                 Divider()
@@ -455,7 +477,7 @@ private struct SettingsTab: View {
             .toggleStyle(.switch).controlSize(.small).font(.callout)
 
             HStack {
-                Text("TH80 Bar 1.2 · protocolo de th80-studio (MIT)")
+                Text("TH80 Bar 2.0 · protocolo de th80-studio (MIT)")
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Sair") { NSApp.terminate(nil) }.keyboardShortcut("q").controlSize(.small)

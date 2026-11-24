@@ -1,16 +1,43 @@
 import Foundation
 import IOKit.hid
 
-/// Transporte HID para a interface proprietária da tela do TH80 Pro V2
-/// (VID 0x320F, PID 0x5055, usage page 0xFF1C, usage 0x92, report ID 4).
+/// Transporte HID para uma interface do TH80 Pro V2 (VID 0x320F, PID 0x5055):
+/// a proprietária da tela (usage page 0xFF1C, usage 0x92, report ID 4) ou a VIA
+/// (usage page 0xFF60, usage 0x61, report ID 0).
 ///
 /// O IOHIDManager roda numa thread própria com run loop; `transact` bloqueia
 /// a thread chamadora (nunca a main) até a resposta chegar.
 final class HIDDevice: @unchecked Sendable {
     static let vendorID = 0x320F
     static let productID = 0x5055
-    static let usagePage = 0xFF1C
-    static let usage = 0x92
+
+    let usagePage: Int
+    let usage: Int
+    let reportID: Int
+    /// Diz se uma resposta corresponde ao pedido.
+    private let matches: ([UInt8], [UInt8]) -> Bool
+
+    /// Interface da tela/iluminação: a resposta ecoa report ID, checksum e comando.
+    static func screen() -> HIDDevice {
+        HIDDevice(usagePage: 0xFF1C, usage: 0x92, reportID: 4) { req, resp in
+            resp.count >= 8 && Array(resp[0..<4]) == Array(req[0..<4])
+        }
+    }
+
+    /// Interface VIA (keymap): a resposta ecoa o comando e os argumentos.
+    static func via() -> HIDDevice {
+        HIDDevice(usagePage: 0xFF60, usage: 0x61, reportID: 0) { req, resp in
+            guard resp.count >= 4, resp[0] == req[0] else { return false }
+            return [0x01, 0x11].contains(req[0]) || Array(resp[1..<4]) == Array(req[1..<4])
+        }
+    }
+
+    init(usagePage: Int, usage: Int, reportID: Int, matches: @escaping ([UInt8], [UInt8]) -> Bool) {
+        self.usagePage = usagePage
+        self.usage = usage
+        self.reportID = reportID
+        self.matches = matches
+    }
 
     enum HIDError: LocalizedError {
         case notConnected
@@ -60,8 +87,8 @@ final class HIDDevice: @unchecked Sendable {
         let match: [String: Any] = [
             kIOHIDVendorIDKey: Self.vendorID,
             kIOHIDProductIDKey: Self.productID,
-            kIOHIDPrimaryUsagePageKey: Self.usagePage,
-            kIOHIDPrimaryUsageKey: Self.usage,
+            kIOHIDPrimaryUsagePageKey: usagePage,
+            kIOHIDPrimaryUsageKey: usage,
         ]
         IOHIDManagerSetDeviceMatching(manager, match as CFDictionary)
         let ctx = Unmanaged.passUnretained(self).toOpaque()
@@ -96,14 +123,13 @@ final class HIDDevice: @unchecked Sendable {
     private func received(_ bytes: [UInt8]) {
         lock.lock()
         defer { lock.unlock() }
-        // A resposta ecoa report ID, checksum e comando (bytes 0..3).
-        guard let req = pending, bytes.count >= 8, Array(bytes[0..<4]) == Array(req[0..<4]) else { return }
+        guard let req = pending, matches(req, bytes) else { return }
         pending = nil
         response = bytes
         responseSignal.signal()
     }
 
-    /// Envia um pacote de 64 bytes e devolve a resposta de 8 bytes.
+    /// Envia um pacote e devolve a resposta correspondente.
     func transact(_ packet: [UInt8], timeout: TimeInterval = 3) throws -> [UInt8] {
         transactionLock.lock()
         defer { transactionLock.unlock() }
@@ -113,7 +139,7 @@ final class HIDDevice: @unchecked Sendable {
         lock.withLock { pending = packet; response = nil }
 
         let result = packet.withUnsafeBufferPointer {
-            IOHIDDeviceSetReport(dev, kIOHIDReportTypeOutput, CFIndex(packet[0]), $0.baseAddress!, packet.count)
+            IOHIDDeviceSetReport(dev, kIOHIDReportTypeOutput, CFIndex(reportID), $0.baseAddress!, packet.count)
         }
         guard result == kIOReturnSuccess else {
             lock.withLock { pending = nil }
@@ -125,7 +151,7 @@ final class HIDDevice: @unchecked Sendable {
             return response
         }
         guard let reply else {
-            throw isConnected ? HIDError.timeout(packet[3]) : HIDError.notConnected
+            throw isConnected ? HIDError.timeout(reportID == 0 ? packet[0] : packet[3]) : HIDError.notConnected
         }
         return reply
     }

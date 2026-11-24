@@ -125,7 +125,7 @@ final class EditorModel {
     }
 
     func endStroke() {
-        changed()
+        touch()
     }
 
     /// Pontos em coordenadas da tela do teclado (y para baixo).
@@ -143,7 +143,7 @@ final class EditorModel {
         guard let (x, y) = pixelCoords(p) else { return }
         beginStroke()
         frame.floodFill(x: x, y: y, color: color.rgbaWord)
-        changed()
+        touch()
     }
 
     func pickColor(at p: CGPoint) {
@@ -163,21 +163,21 @@ final class EditorModel {
         let q = flip(p)
         str.draw(at: NSPoint(x: q.x - size.width / 2, y: q.y - size.height / 2))
         NSGraphicsContext.restoreGraphicsState()
-        changed()
+        touch()
     }
 
     func clearFrame() {
         beginStroke()
         frame.ctx.setFillColor(background.cgColor)
         frame.ctx.fill(CGRect(x: 0, y: 0, width: PixelFrame.w, height: PixelFrame.h))
-        changed()
+        touch()
     }
 
     func undo() {
         let id = ObjectIdentifier(frame)
         guard let last = undoStacks[id]?.popLast() else { NSSound.beep(); return }
         frame.restore(last)
-        changed()
+        touch()
     }
 
     private func flip(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x, y: CGFloat(PixelFrame.h) - p.y) }
@@ -195,14 +195,14 @@ final class EditorModel {
         let f = duplicate ? frame.copy() : PixelFrame(fill: background.cgColor)
         frames.insert(f, at: current + 1)
         current += 1
-        changed()
+        touch()
     }
 
     func deleteFrame() {
         guard frames.count > 1 else { clearFrame(); return }
         frames.remove(at: current)
         current = min(current, frames.count - 1)
-        changed()
+        touch()
     }
 
     func moveFrame(by delta: Int) {
@@ -210,14 +210,14 @@ final class EditorModel {
         guard frames.indices.contains(target) else { return }
         frames.swapAt(current, target)
         current = target
-        changed()
+        touch()
     }
 
     func newProject() {
         frames = [PixelFrame(fill: background.cgColor)]
         current = 0
         undoStacks = [:]
-        changed()
+        touch()
     }
 
     // MARK: Importar / exportar
@@ -233,7 +233,7 @@ final class EditorModel {
         current = 0
         if media.frames.count > 1 { delayMs = Double(min(1000, media.delayMs)) }
         undoStacks = [:]
-        changed()
+        touch()
     }
 
     func exportGIF() {
@@ -263,7 +263,7 @@ final class EditorModel {
         return dir
     }
 
-    private func changed() {
+    func touch() {
         revision += 1
         saveWork?.cancel()
         let images = frames.map(\.image)
@@ -285,7 +285,7 @@ final class EditorModel {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.8, execute: work)
     }
 
-    func delayChanged() { changed() }
+    func delayChanged() { touch() }
 
     private func load() {
         let dir = Self.folder
