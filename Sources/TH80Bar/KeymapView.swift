@@ -2,6 +2,8 @@ import SwiftUI
 
 struct KeymapView: View {
     @Bindable var model: KeymapModel
+    var stats: TypingStats
+    @AppStorage("keymapHeatmap") private var heatmap = false
     @State private var search = ""
     @State private var shortcutMods: Set<Int> = []
     @State private var shortcutBase = 0x06 // C
@@ -50,6 +52,8 @@ struct KeymapView: View {
             }
             Spacer()
             if model.busy { ProgressView().controlSize(.small) }
+            Toggle(isOn: $heatmap) { Label("Mapa de calor", systemImage: "flame") }
+                .toggleStyle(.button).help("Cores pelas teclas que você mais usa (precisa das estatísticas ativadas)")
             Picker("Camada", selection: $model.layer) {
                 Text("Normal").tag(0)
                 Text("Com Fn").tag(1)
@@ -95,6 +99,9 @@ struct KeymapView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(selected ? Color.accentColor.opacity(0.35) : Color(nsColor: .controlBackgroundColor))
                     .shadow(color: .black.opacity(0.18), radius: 0.5, y: 1.5)
+                if heatmap, let heat = heat(code) {
+                    RoundedRectangle(cornerRadius: 7).fill(heatColor(heat))
+                }
                 RoundedRectangle(cornerRadius: 7)
                     .strokeBorder(selected ? Color.accentColor : changed ? Color.orange : Color.primary.opacity(0.08),
                                   lineWidth: selected || changed ? 2 : 1)
@@ -113,8 +120,28 @@ struct KeymapView: View {
         .help(KeyCatalog.longLabel(code))
     }
 
+    /// 0…1 pela quantidade de uso da tecla (escala raiz, para as menos usadas aparecerem).
+    private func heat(_ code: Int) -> Double? {
+        let maxC = stats.maxKeyCount
+        guard maxC > 0, code & 0xFF00 == 0 else { return nil }
+        let c = stats.count(forHID: code)
+        return c == 0 ? nil : sqrt(Double(c) / Double(maxC))
+    }
+
+    private func heatColor(_ t: Double) -> Color {
+        Color(hue: 0.62 - 0.62 * t, saturation: 0.85, brightness: 0.95).opacity(0.35 + 0.5 * t)
+    }
+
     private var legend: some View {
         HStack(spacing: 18) {
+            if heatmap {
+                HStack(spacing: 4) {
+                    Text("pouco").foregroundStyle(.secondary)
+                    LinearGradient(colors: [heatColor(0.05), heatColor(0.5), heatColor(1)], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 90, height: 8).clipShape(Capsule())
+                    Text("muito").foregroundStyle(.secondary)
+                }
+            }
             Label("Alterada", systemImage: "circle.fill").foregroundStyle(.orange)
             Label("▽ Transparente = usa a função da camada Normal", systemImage: "info.circle").foregroundStyle(.secondary)
             Spacer()

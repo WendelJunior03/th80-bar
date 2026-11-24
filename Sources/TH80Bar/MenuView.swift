@@ -29,12 +29,13 @@ private let effects: [Effect] = [
 ]
 
 private enum Tab: String, CaseIterable {
-    case screen = "Tela", light = "Luz", auto = "Auto", settings = "Ajustes"
+    case screen = "Tela", light = "Luz", auto = "Auto", stats = "Stats", settings = "Ajustes"
     var icon: String {
         switch self {
         case .screen: "rectangle.inset.filled"
         case .light: "light.max"
         case .auto: "wand.and.stars"
+        case .stats: "chart.bar"
         case .settings: "gearshape"
         }
     }
@@ -42,6 +43,9 @@ private enum Tab: String, CaseIterable {
 
 struct MenuView: View {
     @Bindable var model: KeyboardModel
+    var editor: EditorModel
+    var keymap: KeymapModel
+    var stats: TypingStats
     @AppStorage("tab") private var tab: Tab = .screen
 
     var body: some View {
@@ -54,7 +58,8 @@ struct MenuView: View {
                     case .screen: ScreenTab(model: model, cfg: cfg)
                     case .light: LightTab(model: model)
                     case .auto: AutoTab(model: model)
-                    case .settings: SettingsTab(model: model)
+                    case .stats: StatsTab(stats: stats, model: model)
+                    case .settings: SettingsTab(model: model, editor: editor, keymap: keymap)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -66,7 +71,7 @@ struct MenuView: View {
             feedback.padding(.horizontal, 14)
             Spacer(minLength: 12)
         }
-        .frame(width: 350)
+        .frame(width: 370)
         .animation(.snappy(duration: 0.2), value: tab)
     }
 
@@ -105,7 +110,8 @@ struct MenuView: View {
             ForEach(Tab.allCases, id: \.self) { t in
                 Button { tab = t } label: {
                     Label(t.rawValue, systemImage: t.icon)
-                        .font(.system(size: 12, weight: .medium))
+                        .labelStyle(TabLabelStyle())
+                        .font(.system(size: 11, weight: .medium))
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .background(tab == t ? AnyShapeStyle(.background) : AnyShapeStyle(.clear),
                                     in: RoundedRectangle(cornerRadius: 7))
@@ -127,7 +133,7 @@ struct MenuView: View {
             Text("Pelo Bluetooth o teclado não libera o controle da tela e da luz.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Divider().padding(.vertical, 4)
-            SettingsTab(model: model)
+            SettingsTab(model: model, editor: editor, keymap: keymap)
         }
         .padding(.horizontal, 14)
     }
@@ -147,6 +153,12 @@ struct MenuView: View {
                 .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 .padding(.top, 10)
         }
+    }
+}
+
+private struct TabLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) { configuration.icon.imageScale(.small); configuration.title }
     }
 }
 
@@ -196,10 +208,28 @@ private struct ScreenTab: View {
                         Label("Desenhar", systemImage: "paintbrush.pointed").frame(maxWidth: .infinity)
                     }
                     .controlSize(.large)
-                    Button { model.syncClock() } label: { Image(systemName: "clock.arrow.circlepath") }
-                        .controlSize(.large).help("Acertar o relógio do teclado com o do Mac")
                 }
                 .disabled(model.busy)
+                HStack(spacing: 8) {
+                    Button { sendMusic() } label: {
+                        Label("Capa da música", systemImage: "music.note").frame(maxWidth: .infinity)
+                    }
+                    Button { model.syncClock() } label: { Image(systemName: "clock.arrow.circlepath") }
+                        .help("Acertar o relógio do teclado com o do Mac")
+                }
+                .disabled(model.busy)
+            }
+        }
+    }
+
+    private func sendMusic() {
+        Task {
+            do {
+                let t = try await NowPlaying.current()
+                let img = ScreenArt.musicCard(title: t.title, artist: t.artist, artwork: t.artwork)
+                model.upload(frames: [img], delayMs: 1000, label: "Enviando capa: \(t.title)…")
+            } catch {
+                model.errorMessage = error.localizedDescription
             }
         }
     }
@@ -446,7 +476,10 @@ private struct LightTab: View {
 
 private struct SettingsTab: View {
     @Bindable var model: KeyboardModel
+    var editor: EditorModel
+    var keymap: KeymapModel
     @Environment(\.openWindow) private var openWindow
+    @State private var pendingBackup: BackupFile?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -476,8 +509,32 @@ private struct SettingsTab: View {
             }
             .toggleStyle(.switch).controlSize(.small).font(.callout)
 
+            Card(title: "Backup") {
+                HStack {
+                    Button { BackupService.export(keyboard: model, editor: editor, keymap: keymap) } label: {
+                        Label("Exportar…", systemImage: "square.and.arrow.up")
+                    }
+                    Button { pendingBackup = BackupService.pick() } label: {
+                        Label("Importar…", systemImage: "square.and.arrow.down")
+                    }
+                }
+                .controlSize(.small)
+                Text("Perfis, automações, desenho e mapa de teclas num arquivo só.").font(.caption).foregroundStyle(.secondary)
+            }
+            .alert("Importar backup", isPresented: Binding(get: { pendingBackup != nil }, set: { if !$0 { pendingBackup = nil } })) {
+                Button("Importar tudo, inclusive teclas") {
+                    if let b = pendingBackup { BackupService.apply(b, keyboard: model, editor: editor, keymap: keymap, applyKeymap: true) }
+                }
+                Button("Só configurações e desenho") {
+                    if let b = pendingBackup { BackupService.apply(b, keyboard: model, editor: editor, keymap: keymap, applyKeymap: false) }
+                }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("As teclas do backup são gravadas no teclado. Dá para desfazer com “Restaurar tudo ao original” na janela de teclas.")
+            }
+
             HStack {
-                Text("TH80 Bar 2.0 · protocolo de th80-studio (MIT)")
+                Text("TH80 Bar 3.0 · protocolo de th80-studio (MIT)")
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Sair") { NSApp.terminate(nil) }.keyboardShortcut("q").controlSize(.small)

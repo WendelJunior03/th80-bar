@@ -32,6 +32,15 @@ final class KeyboardModel {
     var meeting: MeetingSettings { didSet { Prefs.save("meeting", meeting); reevaluate() } }
     var lock: LockSettings { didSet { Prefs.save("lock", lock); reevaluate() } }
     var dailyCard: DailyCardSettings { didSet { Prefs.save("dailyCard", dailyCard) } }
+    var pomodoro: PomodoroSettings { didSet { Prefs.save("pomodoro", pomodoro) } }
+    var appRules: [AppRule] { didSet { Prefs.save("appRules", appRules); reevaluate() } }
+    private(set) var pomodoroPhase: PomodoroPhase?
+    private(set) var pomodoroEnds: Date?
+    /// Atualizado a cada segundo enquanto o Pomodoro roda (para o contador).
+    var now = Date()
+    private var frontApp: String?
+    private var appSwitchWork: DispatchWorkItem?
+
     /// Slot 2 da tela contém a imagem de "ausente" (gravada no último envio).
     var awaySlotReady: Bool { didSet { UserDefaults.standard.set(awaySlotReady, forKey: "awaySlotReady") } }
 
@@ -64,6 +73,8 @@ final class KeyboardModel {
         lock = Prefs.load("lock", LockSettings())
         dailyCard = Prefs.load("dailyCard", DailyCardSettings())
         awaySlotReady = UserDefaults.standard.bool(forKey: "awaySlotReady")
+        pomodoro = Prefs.load("pomodoro", PomodoroSettings())
+        appRules = Prefs.load("appRules", [AppRule]())
 
         hid.onConnectionChange = { [weak self] up in
             guard let self else { return }
@@ -194,11 +205,13 @@ final class KeyboardModel {
     }
 
     /// Envia uma animação para a posição 1; a posição 2 recebe a tela de "ausente" se ativada.
-    func upload(frames: [CGImage], delayMs: Int, label: String, done: ((Bool) -> Void)? = nil) {
+    func upload(frames: [CGImage], delayMs: Int, label: String, secondSlot: [CGImage]? = nil, remember: Bool = true,
+                done: ((Bool) -> Void)? = nil) {
         guard !busy else { return }
         let main = frames.map(MediaEncoder.encode)
-        let withAway = lock.enabled && lock.awayScreen
-        let second = withAway ? [MediaEncoder.encode(ScreenArt.awayImage(text: lock.awayText))] : main
+        let withAway = secondSlot == nil && lock.enabled && lock.awayScreen
+        let second = secondSlot.map { $0.map(MediaEncoder.encode) }
+            ?? (withAway ? [MediaEncoder.encode(ScreenArt.awayImage(text: lock.awayText))] : main)
         uploadProgress = 0
         run(label, { [weak self] c in
             let base = try c.readConfig()
@@ -210,9 +223,11 @@ final class KeyboardModel {
             guard let self else { return }
             self.uploadProgress = nil
             if ok {
-                self.lastUpload = frames.first
-                LastUploadStore.save(frames, delayMs: delayMs)
                 self.awaySlotReady = withAway
+                if remember {
+                    self.lastUpload = frames.first
+                    LastUploadStore.save(frames, delayMs: delayMs)
+                }
             }
             done?(ok)
         })
@@ -301,8 +316,16 @@ final class KeyboardModel {
     // MARK: Automações
 
     /// Decide a luz certa agora: bloqueio > reunião > escolha do usuário/horário.
-    private func reevaluate() {
+    func reevaluate() {
         guard connected, config != nil, var target = baseline else { return }
+        if let app = frontApp, let rule = appRules.first(where: { $0.bundleID == app }),
+           let p = presets.first(where: { $0.id == rule.preset }) {
+            target = p
+        }
+        if let phase = pomodoroPhase, pomodoro.useLight,
+           let p = presets.first(where: { $0.id == (phase == .focus ? pomodoro.focusPreset : pomodoro.breakPreset) }) {
+            target = p
+        }
         if screenLocked && lock.enabled && lock.lightsOff {
             target.brightness = 0
         } else if inMeeting && meeting.enabled {
@@ -332,9 +355,102 @@ final class KeyboardModel {
         dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.lockChanged(false) }
         }
+        // Perfil por app: espera 3 s no app antes de trocar (evita regravar a cada ⌘Tab).
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                          object: nil, queue: .main) { [weak self] note in
+            let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated { self?.appActivated(id) }
+        }
+        timers.append(Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pomodoroTick() }
+        })
         // ⌃⌥P alterna entre os perfis de luz.
         hotKey = GlobalHotKey(keyCode: kVK_ANSI_P, modifiers: controlKey | optionKey, id: 1) { [weak self] in
             MainActor.assumeIsolated { self?.cyclePreset() }
+        }
+    }
+
+    private func appActivated(_ id: String?) {
+        guard id != Bundle.main.bundleIdentifier else { return }
+        appSwitchWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let hadRule = self.frontApp.map { a in self.appRules.contains { $0.bundleID == a } } ?? false
+            self.frontApp = id
+            let hasRule = id.map { a in self.appRules.contains { $0.bundleID == a } } ?? false
+            if hadRule || hasRule { self.reevaluate() }
+        }
+        appSwitchWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+    }
+
+    func addAppRule(url: URL) {
+        guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { return }
+        let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? url.deletingPathExtension().lastPathComponent
+        guard !appRules.contains(where: { $0.bundleID == id }) else { return }
+        appRules.append(AppRule(bundleID: id, name: name, preset: presets.first?.id))
+    }
+
+    // MARK: Pomodoro
+
+    var pomodoroRemaining: TimeInterval? { pomodoroEnds.map { max(0, $0.timeIntervalSince(now)) } }
+
+    var pomodoroLabel: String? {
+        guard let r = pomodoroRemaining else { return nil }
+        let s = Int(r.rounded(.up))
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    func startPomodoro() {
+        if pomodoro.focusPreset == nil { pomodoro.focusPreset = presets.first { $0.name == "Foco" }?.id ?? presets.first?.id }
+        if pomodoro.breakPreset == nil { pomodoro.breakPreset = presets.first { $0.name == "Trabalho" }?.id ?? presets.first?.id }
+        if pomodoro.useScreen && connected {
+            upload(frames: [ScreenArt.pomodoroImage(.focus, minutes: pomodoro.focusMinutes)], delayMs: 1000,
+                   label: "Preparando telas do Pomodoro…",
+                   secondSlot: [ScreenArt.pomodoroImage(.rest, minutes: pomodoro.breakMinutes)], remember: false)
+        }
+        enterPhase(.focus, writeScreen: false)
+    }
+
+    func stopPomodoro() {
+        let usedScreen = pomodoro.useScreen
+        pomodoroPhase = nil
+        pomodoroEnds = nil
+        reevaluate()
+        // Devolve a arte que estava na tela antes do Pomodoro.
+        if usedScreen, connected, let saved = LastUploadStore.loadAll() {
+            let retry = { [weak self] in
+                self?.upload(frames: saved.frames, delayMs: saved.delayMs, label: "Voltando à sua imagem…")
+            }
+            if busy { DispatchQueue.main.asyncAfter(deadline: .now() + 3) { retry() } } else { retry() }
+        }
+    }
+
+    private func enterPhase(_ phase: PomodoroPhase, writeScreen: Bool) {
+        pomodoroPhase = phase
+        now = Date()
+        pomodoroEnds = now.addingTimeInterval(Double(phase == .focus ? pomodoro.focusMinutes : pomodoro.breakMinutes) * 60)
+        reevaluate()
+        if writeScreen && pomodoro.useScreen && connected {
+            let mode = phase == .focus ? 1 : 2
+            if busy {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard self?.pomodoroPhase == phase else { return }
+                    self?.modify("Pomodoro…") { $0.screenMode = mode }
+                }
+            } else {
+                modify(phase == .focus ? "Hora do foco" : "Hora da pausa") { $0.screenMode = mode }
+            }
+        }
+    }
+
+    private func pomodoroTick() {
+        guard let ends = pomodoroEnds, let phase = pomodoroPhase else { return }
+        now = Date()
+        if now >= ends {
+            if pomodoro.sound { NSSound(named: phase == .focus ? "Glass" : "Hero")?.play() }
+            enterPhase(phase == .focus ? .rest : .focus, writeScreen: true)
         }
     }
 

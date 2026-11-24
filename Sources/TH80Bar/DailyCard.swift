@@ -8,6 +8,9 @@ struct DailyCardSettings: Codable, Equatable {
     var showWeather = true
     var showCalendar = false
     var lastSent: String?   // "yyyy-MM-dd"
+    var countdownEnabled = false
+    var countdownTitle = "Férias"
+    var countdownDate = Date().addingTimeInterval(30 * 86_400)
 }
 
 /// Busca clima (Open-Meteo, sem chave) e o próximo compromisso do dia (Calendário).
@@ -23,6 +26,7 @@ enum DailyCardService {
             await fillWeather(&info, city: s.city)
         }
         if s.showCalendar { info.event = await nextEvent() }
+        if s.countdownEnabled { info.countdown = countdownText(s) }
         return info
     }
 
@@ -53,6 +57,18 @@ enum DailyCardService {
         (info.weatherSymbol, info.weatherText) = describe(f.current.weather_code)
     }
 
+    static func countdownText(_ s: DailyCardSettings) -> String {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: s.countdownDate)).day ?? 0
+        let title = s.countdownTitle.isEmpty ? "o grande dia" : s.countdownTitle
+        switch days {
+        case ..<0: return "\(title) já passou"
+        case 0: return "Hoje: \(title)! 🎉"
+        case 1: return "Falta 1 dia · \(title)"
+        default: return "Faltam \(days) dias · \(title)"
+        }
+    }
+
     /// Códigos WMO → símbolo e texto.
     static func describe(_ code: Int) -> (String, String) {
         switch code {
@@ -78,5 +94,22 @@ enum DailyCardService {
         guard let e = events.first else { return "Sem compromissos hoje" }
         let time = e.startDate.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
         return "\(time) · \(e.title ?? "Compromisso")"
+    }
+}
+
+extension DailyCardSettings {
+    /// Tolerante a campos novos: configurações salvas por versões antigas continuam valendo.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = DailyCardSettings()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        hour = try c.decodeIfPresent(Int.self, forKey: .hour) ?? d.hour
+        city = try c.decodeIfPresent(String.self, forKey: .city) ?? d.city
+        showWeather = try c.decodeIfPresent(Bool.self, forKey: .showWeather) ?? d.showWeather
+        showCalendar = try c.decodeIfPresent(Bool.self, forKey: .showCalendar) ?? d.showCalendar
+        lastSent = try c.decodeIfPresent(String.self, forKey: .lastSent)
+        countdownEnabled = try c.decodeIfPresent(Bool.self, forKey: .countdownEnabled) ?? d.countdownEnabled
+        countdownTitle = try c.decodeIfPresent(String.self, forKey: .countdownTitle) ?? d.countdownTitle
+        countdownDate = try c.decodeIfPresent(Date.self, forKey: .countdownDate) ?? d.countdownDate
     }
 }

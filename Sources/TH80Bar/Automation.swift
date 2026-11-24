@@ -141,3 +141,26 @@ final class GlobalHotKey {
 
     deinit { if let ref { UnregisterEventHotKey(ref) } }
 }
+
+// MARK: - Pomodoro
+
+struct PomodoroSettings: Codable, Equatable {
+    var focusMinutes = 25
+    var breakMinutes = 5
+    var useLight = true
+    var useScreen = true
+    var focusPreset: UUID?
+    var breakPreset: UUID?
+    var sound = true
+}
+
+enum PomodoroPhase: String { case focus, rest }
+
+// MARK: - Perfil por app
+
+struct AppRule: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var bundleID: String
+    var name: String
+    var preset: UUID?
+}

@@ -5,13 +5,18 @@ struct TH80BarApp: App {
     @State private var model = KeyboardModel()
     @State private var editor = EditorModel()
     @State private var keymap = KeymapModel()
+    @State private var stats = TypingStats()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuView(model: model)
+            MenuView(model: model, editor: editor, keymap: keymap, stats: stats)
                 .environment(\.locale, Locale(identifier: "pt_BR"))
         } label: {
-            Image(systemName: model.connected ? "keyboard.fill" : "keyboard")
+            if let label = model.pomodoroLabel {
+                Text("\(model.pomodoroPhase == .focus ? "🍅" : "☕") \(label)").monospacedDigit()
+            } else {
+                Image(systemName: model.connected ? "keyboard.fill" : "keyboard")
+            }
         }
         .menuBarExtraStyle(.window)
 
@@ -23,7 +28,7 @@ struct TH80BarApp: App {
         .defaultSize(width: 1180, height: 720)
 
         Window("Teclas do TH80", id: "keymap") {
-            KeymapView(model: keymap)
+            KeymapView(model: keymap, stats: stats)
                 .environment(\.locale, Locale(identifier: "pt_BR"))
         }
         .windowResizability(.contentMinSize)

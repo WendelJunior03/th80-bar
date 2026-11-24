@@ -253,6 +253,21 @@ final class KeymapModel {
         assign(o, to: key)
     }
 
+    /// Grava camadas inteiras (de um backup), tecla a tecla, só onde difere.
+    func applyLayers(_ target: [[Int]]) {
+        let current = layers
+        run("Aplicando teclas do backup…") { c in
+            var updated = current
+            for l in target.indices where updated.indices.contains(l) {
+                for i in target[l].indices where i < updated[l].count && updated[l][i] != target[l][i] {
+                    try c.setKey(layer: l, row: i / VIAClient.cols, col: i % VIAClient.cols, code: target[l][i])
+                    updated[l][i] = target[l][i]
+                }
+            }
+            return updated
+        }
+    }
+
     func restoreAll() {
         let orig = original
         let current = layers

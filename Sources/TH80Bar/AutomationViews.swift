@@ -64,21 +64,102 @@ struct AutoTab: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
+                pomodoroCard
+                appsCard
                 scheduleCard
                 meetingCard
                 lockCard
                 dailyCard
             }
         }
-        .frame(maxHeight: 470)
+        .frame(maxHeight: 500)
+    }
+
+    private var pomodoroCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Pomodoro", systemImage: "timer").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if let label = model.pomodoroLabel {
+                    Text("\(model.pomodoroPhase == .focus ? "🍅" : "☕") \(label)")
+                        .font(.system(.callout, design: .rounded).bold()).monospacedDigit()
+                    Button("Parar") { model.stopPomodoro() }.controlSize(.small)
+                } else {
+                    Button("Começar") { model.startPomodoro() }.controlSize(.small).buttonStyle(.borderedProminent)
+                }
+            }
+            if model.pomodoroPhase == nil {
+                HStack {
+                    Stepper("Foco \(model.pomodoro.focusMinutes) min", value: $model.pomodoro.focusMinutes, in: 5...90, step: 5)
+                    Stepper("Pausa \(model.pomodoro.breakMinutes)", value: $model.pomodoro.breakMinutes, in: 1...30)
+                }
+                .font(.callout)
+                Toggle("Mudar a luz", isOn: $model.pomodoro.useLight).toggleStyle(.checkbox)
+                if model.pomodoro.useLight {
+                    presetPicker("Luz do foco", selection: $model.pomodoro.focusPreset)
+                    presetPicker("Luz da pausa", selection: $model.pomodoro.breakPreset)
+                }
+                Toggle("Mostrar Foco/Pausa na tela", isOn: $model.pomodoro.useScreen).toggleStyle(.checkbox)
+                Toggle("Tocar som ao trocar", isOn: $model.pomodoro.sound).toggleStyle(.checkbox)
+            }
+        }
+        .font(.callout)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+        .onAppear {
+            if model.pomodoro.focusPreset == nil { model.pomodoro.focusPreset = model.presets.first { $0.name == "Foco" }?.id ?? model.presets.first?.id }
+            if model.pomodoro.breakPreset == nil { model.pomodoro.breakPreset = model.presets.first { $0.name == "Trabalho" }?.id ?? model.presets.first?.id }
+        }
+    }
+
+    private var appsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Luz por app", systemImage: "app.badge").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.application]
+                    panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if panel.runModal() == .OK, let url = panel.url { model.addAppRule(url: url) }
+                } label: { Image(systemName: "plus") }
+                .controlSize(.small).help("Escolher um app")
+            }
+            if model.appRules.isEmpty {
+                Text("Ex.: abrir um jogo deixa a luz no perfil Jogo; ao sair, ela volta.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach($model.appRules) { $rule in
+                HStack {
+                    Image(nsImage: NSWorkspace.shared.urlForApplication(withBundleIdentifier: rule.bundleID)
+                        .map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage())
+                        .resizable().frame(width: 18, height: 18)
+                    Text(rule.name).lineLimit(1)
+                    Spacer()
+                    Picker("", selection: $rule.preset) {
+                        ForEach(model.presets) { p in Text(p.name).tag(UUID?.some(p.id)) }
+                    }
+                    .labelsHidden().frame(width: 100)
+                    Button { model.appRules.removeAll { $0.id == rule.id } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                }
+                .font(.callout)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func card<C: View>(_ title: String, icon: String, isOn: Binding<Bool>, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: isOn) {
+            HStack {
                 Label(title, systemImage: icon).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
-            .toggleStyle(.switch).controlSize(.small)
             if isOn.wrappedValue {
                 content().font(.callout)
             }
@@ -176,6 +257,12 @@ struct AutoTab: View {
                 TextField("Cidade (ex.: São Paulo)", text: $model.dailyCard.city).textFieldStyle(.roundedBorder)
             }
             Toggle("Próximo compromisso (Calendário)", isOn: $model.dailyCard.showCalendar)
+            Toggle("Contagem regressiva", isOn: $model.dailyCard.countdownEnabled)
+            if model.dailyCard.countdownEnabled {
+                TextField("Para quê? (ex.: Férias)", text: $model.dailyCard.countdownTitle).textFieldStyle(.roundedBorder)
+                DatePicker("Data", selection: $model.dailyCard.countdownDate, displayedComponents: .date)
+                Text(DailyCardService.countdownText(model.dailyCard)).font(.caption).foregroundStyle(.secondary)
+            }
             if let img = model.cardPreview {
                 Image(decorative: img, scale: 1).resizable().aspectRatio(240 / 135, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 6))

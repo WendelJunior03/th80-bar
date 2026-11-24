@@ -383,6 +383,7 @@ enum ScreenArt {
         var weatherText = ""
         var city = ""
         var event: String?
+        var countdown: String?
     }
 
     static func dailyCard(_ info: DayInfo) -> CGImage {
@@ -412,9 +413,90 @@ enum ScreenArt {
             ctx.setFillColor(color(0, 0, 0, 0.35))
             ctx.addPath(CGPath(roundedRect: CGRect(x: 8, y: 8, width: 224, height: 40), cornerWidth: 9, cornerHeight: 9, transform: nil))
             ctx.fillPath()
-            symbol(info.event == nil ? "checkmark.circle" : "calendar", size: 14, color: .white, center: CGPoint(x: 24, y: 28))
-            let ev = attributed(info.event ?? (info.weatherText.isEmpty ? "Bom dia!" : info.weatherText), size: 13, weight: .semibold, color: .white)
+            // Barra de baixo: contagem regressiva tem prioridade; o compromisso sobe para uma linha menor.
+            let barText = info.countdown ?? info.event ?? (info.weatherText.isEmpty ? "Bom dia!" : info.weatherText)
+            let barIcon = info.countdown != nil ? "hourglass" : (info.event == nil ? "checkmark.circle" : "calendar")
+            symbol(barIcon, size: 14, color: .white, center: CGPoint(x: 24, y: 28))
+            let ev = attributed(barText, size: 13, weight: .semibold, color: .white)
             ev.draw(with: NSRect(x: 40, y: 18, width: 186, height: 20), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            if info.countdown != nil, let event = info.event {
+                attributed(event, size: 10, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.85))
+                    .draw(with: NSRect(x: 12, y: 54, width: 160, height: 14), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            }
+        }
+    }
+
+    // MARK: - Pomodoro
+
+    static func pomodoroImage(_ phase: PomodoroPhase, minutes: Int) -> CGImage {
+        canvas { ctx in
+            let focus = phase == .focus
+            let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                               colors: (focus ? [color(0.45, 0.05, 0.08), color(0.85, 0.20, 0.15)]
+                                              : [color(0.02, 0.25, 0.30), color(0.10, 0.65, 0.60)]) as CFArray,
+                               locations: [0, 1])!
+            ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: w, y: h), options: [])
+            ScreenArt.text(focus ? "🍅" : "☕", size: 46, color: .white, center: CGPoint(x: 62, y: 70), design: .default)
+            attributed(focus ? "Foco" : "Pausa", size: 34, color: .white).draw(at: NSPoint(x: 108, y: 66))
+            attributed("\(minutes) min", size: 16, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.8))
+                .draw(at: NSPoint(x: 110, y: 44))
+        }
+    }
+
+    // MARK: - Estatísticas de digitação
+
+    static func statsCard(today: Int, week: [Int], topKey: String?) -> CGImage {
+        canvas { ctx in
+            let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                               colors: [color(0.05, 0.05, 0.12), color(0.20, 0.10, 0.35)] as CFArray, locations: [0, 1])!
+            ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: 0, y: h), options: [])
+            attributed("Hoje", size: 12, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.7)).draw(at: NSPoint(x: 12, y: 108))
+            attributed(today.formatted(.number.locale(Locale(identifier: "pt_BR"))), size: 32, color: .white).draw(at: NSPoint(x: 12, y: 68))
+            attributed("teclas", size: 12, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.7)).draw(at: NSPoint(x: 12, y: 54))
+            if let topKey {
+                attributed("Mais usada: \(topKey)", size: 11, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.85))
+                    .draw(at: NSPoint(x: 12, y: 14))
+            }
+            // barras dos últimos 7 dias
+            let maxV = max(1, week.max() ?? 1)
+            for (i, v) in week.enumerated() {
+                let bh = 70 * CGFloat(v) / CGFloat(maxV)
+                let x = 140 + CGFloat(i) * 13
+                ctx.setFillColor(i == week.count - 1 ? color(0.4, 0.8, 1) : color(0.6, 0.5, 1, 0.7))
+                ctx.addPath(CGPath(roundedRect: CGRect(x: x, y: 30, width: 9, height: max(2, bh)), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                ctx.fillPath()
+            }
+            attributed("7 dias", size: 9, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.6)).draw(at: NSPoint(x: 168, y: 14))
+        }
+    }
+
+    // MARK: - Música
+
+    static func musicCard(title: String, artist: String, artwork: CGImage?) -> CGImage {
+        canvas { ctx in
+            if let art = artwork {
+                // fundo: a capa ampliada e escurecida
+                ctx.saveGState()
+                ctx.setAlpha(0.35)
+                ctx.draw(art, in: CGRect(x: -20, y: -60, width: 280, height: 280))
+                ctx.restoreGState()
+                ctx.setFillColor(color(0, 0, 0, 0.45))
+                ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                ctx.saveGState()
+                ctx.addPath(CGPath(roundedRect: CGRect(x: 10, y: 15, width: 105, height: 105), cornerWidth: 8, cornerHeight: 8, transform: nil))
+                ctx.clip()
+                ctx.draw(art, in: CGRect(x: 10, y: 15, width: 105, height: 105))
+                ctx.restoreGState()
+            } else {
+                ctx.setFillColor(color(0.1, 0.1, 0.15))
+                ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                symbol("music.note", size: 50, color: .white, center: CGPoint(x: 62, y: 67))
+            }
+            symbol("music.note", size: 10, color: NSColor(deviceWhite: 1, alpha: 0.7), center: CGPoint(x: 130, y: 104))
+            attributed(title, size: 15, color: .white)
+                .draw(with: NSRect(x: 124, y: 46, width: 108, height: 50), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            attributed(artist, size: 11, weight: .semibold, color: NSColor(deviceWhite: 1, alpha: 0.75))
+                .draw(with: NSRect(x: 124, y: 18, width: 108, height: 28), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
     }
 }
