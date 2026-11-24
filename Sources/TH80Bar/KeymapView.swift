@@ -60,7 +60,7 @@ struct KeymapView: View {
                 Text("Camada 3").tag(2)
                 Text("Camada 4").tag(3)
             }
-            .pickerStyle(.segmented).frame(width: 360)
+            .pickerStyle(.segmented).labelsHidden().frame(width: 330)
             .disabled(model.layers.isEmpty)
         }
     }
