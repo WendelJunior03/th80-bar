@@ -173,6 +173,7 @@ private struct Card<Content: View>: View {
 private struct ScreenTab: View {
     @Bindable var model: KeyboardModel
     let cfg: TH80Config
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 10) {
@@ -183,9 +184,16 @@ private struct ScreenTab: View {
                 modeTiles
                 HStack(spacing: 8) {
                     Button { model.chooseMedia() } label: {
-                        Label("Nova imagem ou GIF", systemImage: "photo.badge.plus").frame(maxWidth: .infinity)
+                        Label("Imagem ou GIF", systemImage: "photo.badge.plus").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.large)
+                    Button {
+                        openWindow(id: "editor")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
+                        Label("Desenhar", systemImage: "paintbrush.pointed").frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
                     Button { model.syncClock() } label: { Image(systemName: "clock.arrow.circlepath") }
                         .controlSize(.large).help("Acertar o relógio do teclado com o do Mac")
                 }
@@ -447,7 +455,7 @@ private struct SettingsTab: View {
             .toggleStyle(.switch).controlSize(.small).font(.callout)
 
             HStack {
-                Text("TH80 Bar 1.1 · protocolo de th80-studio (MIT)")
+                Text("TH80 Bar 1.2 · protocolo de th80-studio (MIT)")
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Sair") { NSApp.terminate(nil) }.keyboardShortcut("q").controlSize(.small)

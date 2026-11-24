@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct TH80BarApp: App {
     @State private var model = KeyboardModel()
+    @State private var editor = EditorModel()
 
     var body: some Scene {
         MenuBarExtra {
@@ -12,5 +13,12 @@ struct TH80BarApp: App {
             Image(systemName: model.connected ? "keyboard.fill" : "keyboard")
         }
         .menuBarExtraStyle(.window)
+
+        Window("Desenhar para o TH80", id: "editor") {
+            EditorView(editor: editor, keyboard: model)
+                .environment(\.locale, Locale(identifier: "pt_BR"))
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1180, height: 720)
     }
 }
